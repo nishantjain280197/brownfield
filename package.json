@@ -1,0 +1,22 @@
+{
+  "name": "weather-insurance-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Weather-based insurance risk assessment portal for adjusters and underwriters",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "start": "cd server && npm start",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "test": "cd server && npm test",
+    "test:client": "cd client && npm test",
+    "test:all": "npm run test && npm run test:client",
+    "lint": "cd server && npm run lint && cd ../client && npm run lint",
+    "lint:fix": "cd server && npm run lint:fix && cd ../client && npm run lint:fix"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

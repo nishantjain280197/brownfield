@@ -1,0 +1,372 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Weather Insurance Portal API",
+    "description": "API for weather-based insurance risk assessment. Provides historical weather data lookups, risk severity ratings, 3-year comparisons, and claims documentation support.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Claims Engineering Team"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Development server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string", "description": "Error code" },
+          "message": { "type": "string", "description": "Human-readable error message" }
+        },
+        "required": ["error", "message"]
+      },
+      "RiskSeverity": {
+        "type": "string",
+        "enum": ["low", "moderate", "high", "severe"]
+      },
+      "RiskAssessment": {
+        "type": "object",
+        "properties": {
+          "overall": { "$ref": "#/components/schemas/RiskSeverity" },
+          "wind": {
+            "type": "object",
+            "properties": {
+              "severity": { "$ref": "#/components/schemas/RiskSeverity" },
+              "value": { "type": "number" },
+              "gusts": { "type": "number" }
+            }
+          },
+          "precipitation": {
+            "type": "object",
+            "properties": {
+              "severity": { "$ref": "#/components/schemas/RiskSeverity" },
+              "value": { "type": "number" }
+            }
+          },
+          "hail": {
+            "type": "object",
+            "properties": {
+              "severity": { "$ref": "#/components/schemas/RiskSeverity" },
+              "detected": { "type": "boolean" }
+            }
+          },
+          "temperature": {
+            "type": "object",
+            "properties": {
+              "severity": { "$ref": "#/components/schemas/RiskSeverity" },
+              "max": { "type": "number" },
+              "min": { "type": "number" }
+            }
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "username": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "role": { "type": "string", "enum": ["admin", "user", "adjuster", "underwriter"] }
+        }
+      },
+      "Threshold": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "peril_type": { "type": "string" },
+          "severity": { "$ref": "#/components/schemas/RiskSeverity" },
+          "min_value": { "type": "number" },
+          "max_value": { "type": "number", "nullable": true },
+          "unit": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "user_id": { "type": "string" },
+          "action": { "type": "string" },
+          "resource": { "type": "string" },
+          "details": { "type": "object" },
+          "ip_address": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "security": [{ "BearerAuth": [] }],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Authenticate user",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["username", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": { "type": "string" },
+                    "user": { "$ref": "#/components/schemas/User" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid credentials", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Logout and invalidate session",
+        "responses": {
+          "200": { "description": "Logged out successfully" },
+          "401": { "description": "Not authenticated" }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Get current user profile",
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "user": { "$ref": "#/components/schemas/User" } } } } }
+          }
+        }
+      }
+    },
+    "/api/weather/search": {
+      "get": {
+        "summary": "Search historical weather data",
+        "description": "Fetches weather data for a location and date range with risk assessments",
+        "parameters": [
+          { "name": "lat", "in": "query", "required": true, "schema": { "type": "number" }, "description": "Latitude" },
+          { "name": "lon", "in": "query", "required": true, "schema": { "type": "number" }, "description": "Longitude" },
+          { "name": "start_date", "in": "query", "required": true, "schema": { "type": "string", "format": "date" }, "description": "Start date (YYYY-MM-DD)" },
+          { "name": "end_date", "in": "query", "required": true, "schema": { "type": "string", "format": "date" }, "description": "End date (YYYY-MM-DD)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weather data with risk assessments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": { "type": "object", "properties": { "latitude": { "type": "number" }, "longitude": { "type": "number" } } },
+                    "dateRange": { "type": "object", "properties": { "start": { "type": "string" }, "end": { "type": "string" } } },
+                    "weather": { "type": "object" },
+                    "riskAssessments": { "type": "array", "items": { "$ref": "#/components/schemas/RiskAssessment" } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid parameters" },
+          "500": { "description": "Weather API error" }
+        }
+      }
+    },
+    "/api/weather/geocode": {
+      "get": {
+        "summary": "Geocode address to coordinates",
+        "parameters": [
+          { "name": "address", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Address or ZIP code" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Geocoded coordinates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lat": { "type": "number" },
+                    "lon": { "type": "number" },
+                    "display_name": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid address" }
+        }
+      }
+    },
+    "/api/weather/comparison": {
+      "get": {
+        "summary": "3-year historical comparison",
+        "description": "Fetches weather data for the same date across 3 consecutive years for comparison",
+        "parameters": [
+          { "name": "lat", "in": "query", "required": true, "schema": { "type": "number" } },
+          { "name": "lon", "in": "query", "required": true, "schema": { "type": "number" } },
+          { "name": "date_of_loss", "in": "query", "required": true, "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": {
+          "200": { "description": "3-year comparison data with risk assessments" },
+          "400": { "description": "Invalid parameters" }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "summary": "List all users (admin only)",
+        "responses": {
+          "200": { "description": "User list", "content": { "application/json": { "schema": { "type": "object", "properties": { "users": { "type": "array", "items": { "$ref": "#/components/schemas/User" } } } } } } },
+          "403": { "description": "Insufficient permissions" }
+        }
+      },
+      "post": {
+        "summary": "Create a new user (admin only)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string" },
+                  "email": { "type": "string" },
+                  "password": { "type": "string" },
+                  "role": { "type": "string", "enum": ["admin", "user", "adjuster", "underwriter"] }
+                },
+                "required": ["username", "email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User created" },
+          "409": { "description": "User already exists" }
+        }
+      }
+    },
+    "/api/thresholds": {
+      "get": {
+        "summary": "List risk thresholds",
+        "parameters": [
+          { "name": "peril_type", "in": "query", "schema": { "type": "string" }, "description": "Filter by peril type" }
+        ],
+        "responses": {
+          "200": { "description": "Threshold list", "content": { "application/json": { "schema": { "type": "object", "properties": { "thresholds": { "type": "array", "items": { "$ref": "#/components/schemas/Threshold" } } } } } } }
+        }
+      }
+    },
+    "/api/thresholds/{id}": {
+      "put": {
+        "summary": "Update a risk threshold (admin only)",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "min_value": { "type": "number" },
+                  "max_value": { "type": "number" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Threshold updated" },
+          "404": { "description": "Threshold not found" }
+        }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "summary": "View audit log (admin only)",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "action", "in": "query", "schema": { "type": "string" } },
+          { "name": "user_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "start_date", "in": "query", "schema": { "type": "string" } },
+          { "name": "end_date", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated audit entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEntry" } },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": { "type": "integer" },
+                        "limit": { "type": "integer" },
+                        "total": { "type": "integer" },
+                        "totalPages": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
